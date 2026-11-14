@@ -7150,6 +7150,18 @@
 
   "submission.section.section-coar-notify.small.notification": "Select a service for {{ pattern }} of this item",
 
+  "submission.section.section-coar-notify.selection.unavailable": "Unavailable service (ID: {{id}})",
+
+  "submission.section.section-coar-notify.selection.disabled": "This saved service is currently unavailable for new requests. Its selection has been retained.",
+
+  "submission.section.section-coar-notify.requests.title": "Selected COAR Notify requests",
+
+  "submission.section.section-coar-notify.request.request-review": "Review",
+
+  "submission.section.section-coar-notify.request.request-endorsement": "Endorsement",
+
+  "submission.section.section-coar-notify.request.request-ingest": "Ingest",
+
   "submission.section.section-coar-notify.selection.description": "Selected service's description:",
 
   "submission.section.section-coar-notify.selection.no-description": "No further information is available",

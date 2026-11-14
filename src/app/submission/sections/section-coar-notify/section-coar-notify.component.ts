@@ -12,13 +12,13 @@ import {
   LdnService,
   LdnServiceByPattern,
 } from '@dspace/core/coar-notify/ldn-services/models/ldn-services.model';
+import { loadSelectedNotifyServices } from '@dspace/core/coar-notify/ldn-services/selected-notify-services';
 import { LdnPattern } from '@dspace/core/coar-notify/notify-info/models/submission-coar-notify.model';
 import { CoarNotifyConfigDataService } from '@dspace/core/config/coar-notify-config-data.service';
 import { JsonPatchOperationPathCombiner } from '@dspace/core/json-patch/builder/json-patch-operation-path-combiner';
 import { JsonPatchOperationsBuilder } from '@dspace/core/json-patch/builder/json-patch-operations-builder';
 import {
   getFirstCompletedRemoteData,
-  getPaginatedListPayload,
   getRemoteDataPayload,
 } from '@dspace/core/shared/operators';
 import { SubmissionSectionError } from '@dspace/core/submission/models/submission-section-error.model';
@@ -41,6 +41,7 @@ import {
 import {
   filter,
   map,
+  shareReplay,
   take,
   tap,
 } from 'rxjs/operators';
@@ -108,7 +109,7 @@ export class SubmissionSectionCoarNotifyComponent extends SectionModelComponent 
    */
   protected subs: Subscription[] = [];
 
-  private filteredServicesByPattern = {};
+  private filteredServicesByPattern: { [pattern: string]: Observable<LdnService[]> } = {};
 
   constructor(protected ldnServicesService: LdnServicesService,
               // protected formOperationsService: SectionFormOperationsService,
@@ -176,7 +177,8 @@ export class SubmissionSectionCoarNotifyComponent extends SectionModelComponent 
     if (hasPrevValueStored) {
       // when there is a previous value stored and it is different from the new one
       this.operationsBuilder.flushOperation(this.pathCombiner.getPath([pattern, '-']));
-      if (this.filteredServicesByPattern[pattern]?.includes(this.previousServices[pattern].services[index])){
+      const savedIds: (number | string)[] = this.sectionData.data?.[pattern] || [];
+      if (savedIds.some(id => String(id) === String(this.previousServices[pattern].services[index].id))) {
         this.operationsBuilder.remove(this.pathCombiner.getPath([pattern, index.toString()]));
       }
     }
@@ -193,38 +195,22 @@ export class SubmissionSectionCoarNotifyComponent extends SectionModelComponent 
 
   /**
    * Initializes the selected services by pattern.
-   * Loops through each pattern and filters the services based on the pattern.
-   * If the section data has a value for the pattern, it adds the service to the selected services by pattern.
-   * If the section data does not have a value for the pattern, it adds a null service to the selected services by pattern,
-   * so that the select element is initialized with a null value and to display the default select input.
+   * Resolve saved IDs independently of the enabled manual services offered by the dropdown.
+   * Patterns without saved selections start with an empty dropdown row.
    */
   initSelectedServicesByPattern(): void {
     this.patterns.forEach((ldnPattern) => {
-      if (hasValue(this.sectionData.data[ldnPattern.pattern])) {
-        this.subs.push(
-          this.filterServices(ldnPattern.pattern)
-            .subscribe((services: LdnService[]) => {
-
-              if (!this.ldnServiceByPattern[ldnPattern.pattern]) {
-                this.ldnServiceByPattern[ldnPattern.pattern] = {
-                  services: [],
-                  allowsMultipleRequests: ldnPattern.multipleRequest,
-                };
-              }
-
-              this.ldnServiceByPattern[ldnPattern.pattern].services = services.filter((service) => {
-                const selection = (this.sectionData.data[ldnPattern.pattern] as LdnService[]).find((s: LdnService) => s.id === service.id);
-                this.addService(ldnPattern, selection);
-                return this.sectionData.data[ldnPattern.pattern].includes(service.uuid);
-              });
-            }),
-        );
-      } else {
-        this.ldnServiceByPattern[ldnPattern.pattern] = {
-          services: [],
-          allowsMultipleRequests: ldnPattern.multipleRequest,
-        };
-        this.addService(ldnPattern, null);
+      const ids: (number | string)[] = this.sectionData.data?.[ldnPattern.pattern] || [];
+      this.ldnServiceByPattern[ldnPattern.pattern] = {
+        services: [null],
+        allowsMultipleRequests: ldnPattern.multipleRequest,
+      };
+      if (ids.length > 0) {
+        this.hasSectionData = true;
+        this.subs.push(loadSelectedNotifyServices(this.ldnServicesService, ids).subscribe((services) => {
+          this.ldnServiceByPattern[ldnPattern.pattern].services = services;
+          this.chd.markForCheck();
+        }));
       }
     });
   }
@@ -269,31 +255,19 @@ export class SubmissionSectionCoarNotifyComponent extends SectionModelComponent 
    * Retrieve services with corresponding patterns to the dropdowns.
    */
   filterServices(pattern: string): Observable<LdnService[]> {
-    return this.ldnServicesService.findByInboundPattern(pattern).pipe(
-      getFirstCompletedRemoteData(),
-      tap((rd) => {
-        if (rd.hasFailed) {
-          throw new Error(`Failed to retrieve services for pattern ${pattern}`);
-        }
-      }),
-      filter((rd) => rd.hasSucceeded),
-      getRemoteDataPayload(),
-      getPaginatedListPayload(),
-      tap(res => {
-        if (!this.filteredServicesByPattern[pattern]){
-          this.filteredServicesByPattern[pattern] = [];
-        }
-        if (this.filteredServicesByPattern[pattern].length === 0) {
-          this.filteredServicesByPattern[pattern].push(...res);
-        }
-      }),
-      map((res: LdnService[]) => res.filter((service) => {
-        if (!this.hasSectionData){
-          this.hasSectionData = this.hasInboundPattern(service, pattern);
-        }
-        return this.hasInboundPattern(service, pattern);
-      })),
-    );
+    if (!this.filteredServicesByPattern[pattern]) {
+      this.filteredServicesByPattern[pattern] = this.ldnServicesService.findByInboundPattern(pattern).pipe(
+        getFirstCompletedRemoteData(),
+        getRemoteDataPayload(),
+        map(payload => payload?.page || []),
+        map(services => services.filter(service => this.hasInboundPattern(service, pattern))),
+        tap(services => {
+          this.hasSectionData = this.hasSectionData || services.length > 0;
+        }),
+        shareReplay({ bufferSize: 1, refCount: true }),
+      );
+    }
+    return this.filteredServicesByPattern[pattern];
   }
 
   /**

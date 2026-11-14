@@ -33,6 +33,9 @@
                   </tbody>
                 </table>
               </div>
+              @if (fromSubmissionObject && coarNotifySelections) {
+                <ds-coar-notify-requests [selections]="coarNotifySelections"></ds-coar-notify-requests>
+              }
               <ds-item-page-full-file-section [item]="item"></ds-item-page-full-file-section>
               <ds-item-page-collections [item]="item"></ds-item-page-collections>
               <ds-item-versions class="mt-2" [item]="item"></ds-item-versions>

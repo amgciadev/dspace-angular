@@ -2,7 +2,7 @@
   @if (patterns?.length > 0 ) {
     @for (ldnPattern of patterns; track ldnPattern; let i = $index) {
       <div class="col">
-        @if ((filterServices(ldnPattern.pattern ) | async)?.length > 0) {
+        @if ((filterServices(ldnPattern.pattern) | async)?.length > 0 || ldnServiceByPattern[ldnPattern.pattern]?.services[0]) {
           <div>
             <label class="row col-form-label">
               {{'submission.section.section-coar-notify.control.' + ldnPattern.pattern + '.label' | translate }}
@@ -27,7 +27,7 @@
                               [readonly]="true"
                               [ngClass]="{'border-danger': (getShownSectionErrors$(ldnPattern.pattern, serviceIndex) | async)?.length > 0}"
                               class="form-control w-100 scrollable-dropdown-input"
-                              [value]="ldnServiceByPattern[ldnPattern.pattern].services[serviceIndex]?.name"
+                              [value]="service?.name || (service ? ('submission.section.section-coar-notify.selection.unavailable' | translate: { id: service.id }) : '')"
                               (click)="myDropdown.open()"
                               />
                           </div>
@@ -52,7 +52,7 @@
                                   {{'submission.section.section-coar-notify.dropdown.no-data' | translate}}
                                 </button>
                               }
-                              @if ((filterServices(ldnPattern.pattern ) | async)?.length > 0) {
+                              @if (service || (filterServices(ldnPattern.pattern) | async)?.length > 0) {
                                 <button
                                   class="dropdown-item collection-item text-truncate w-100"
                                   (click)="onChange(ldnPattern.pattern, serviceIndex, null)"
@@ -103,6 +103,9 @@
                             {{ error.message | translate}}
                           </small>
                         }
+                      }
+                      @if (service && !service.enabled) {
+                        <p class="text-muted">{{ 'submission.section.section-coar-notify.selection.disabled' | translate }}</p>
                       }
                       @if (ldnServiceByPattern[ldnPattern.pattern].services[serviceIndex]) {
                         <div

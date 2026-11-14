@@ -1,0 +1,19 @@
+@let requests = requests$ | async;
+@if (requests?.length > 0) {
+  <section class="my-3">
+    <h2>{{ 'submission.section.section-coar-notify.requests.title' | translate }}</h2>
+    <dl>
+      @for (request of requests; track request.pattern) {
+        <dt>{{ 'submission.section.section-coar-notify.request.' + request.pattern | translate }}</dt>
+        @for (service of request.services; track $index) {
+          <dd>
+            {{ service.name || ('submission.section.section-coar-notify.selection.unavailable' | translate: { id: service.id }) }}
+            @if (service.name && !service.enabled) {
+              <p class="text-muted">{{ 'submission.section.section-coar-notify.selection.disabled' | translate }}</p>
+            }
+          </dd>
+        }
+      }
+    </dl>
+  </section>
+}

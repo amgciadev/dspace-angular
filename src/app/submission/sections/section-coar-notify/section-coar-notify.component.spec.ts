@@ -1,7 +1,9 @@
 import { ChangeDetectorRef } from '@angular/core';
 import {
   ComponentFixture,
+  fakeAsync,
   TestBed,
+  tick,
 } from '@angular/core/testing';
 import { LdnServicesService } from '@dspace/core/coar-notify/ldn-services/ldn-services-data.service';
 import { NotifyServicePattern } from '@dspace/core/coar-notify/ldn-services/models/ldn-service-patterns.model';
@@ -13,10 +15,15 @@ import { SubmissionCoarNotifyModel } from '@dspace/core/coar-notify/notify-info/
 import { CoarNotifyConfigDataService } from '@dspace/core/config/coar-notify-config-data.service';
 import { JsonPatchOperationsBuilder } from '@dspace/core/json-patch/builder/json-patch-operations-builder';
 import { createPaginatedList } from '@dspace/core/testing/utils.test';
-import { createSuccessfulRemoteDataObject$ } from '@dspace/core/utilities/remote-data.utils';
+import {
+  createFailedRemoteDataObject$,
+  createSuccessfulRemoteDataObject$,
+} from '@dspace/core/utilities/remote-data.utils';
 import { NgbDropdown } from '@ng-bootstrap/ng-bootstrap';
 import { TranslateModule } from '@ngx-translate/core';
+import { Deserialize } from 'cerialize';
 import { of } from 'rxjs';
+import { delay } from 'rxjs/operators';
 
 import { SectionsService } from '../sections.service';
 import { SubmissionSectionCoarNotifyComponent } from './section-coar-notify.component';
@@ -33,18 +40,16 @@ describe('SubmissionSectionCoarNotifyComponent', () => {
   let cdRefStub: any;
 
 
-  const patterns: SubmissionCoarNotifyModel[] = Object.assign(
-    [new SubmissionCoarNotifyModel()],
-    {
-      patterns: [{ pattern: 'review', multipleRequest: false }, { pattern: 'endorsment', multipleRequest: false }],
-    },
-  );
+  const patterns: SubmissionCoarNotifyModel[] = [Object.assign(new SubmissionCoarNotifyModel(), {
+    patterns: [{ pattern: 'review', multipleRequest: false }, { pattern: 'endorsement', multipleRequest: false }],
+  })];
   const patternsPL = createPaginatedList(patterns);
   const coarNotifyConfig = createSuccessfulRemoteDataObject$(patternsPL);
 
   beforeEach(async () => {
     ldnServicesService = jasmine.createSpyObj('LdnServicesService', [
       'findByInboundPattern',
+      'findById',
     ]);
     coarNotifyConfigDataService = jasmine.createSpyObj(
       'CoarNotifyConfigDataService',
@@ -60,6 +65,8 @@ describe('SubmissionSectionCoarNotifyComponent', () => {
       'dispatchRemoveSectionErrors',
       'getSectionServerErrors',
       'setSectionError',
+      'setSectionStatus',
+      'getShownSectionErrors',
     ]);
     cdRefStub = Object.assign({
       detectChanges: () => fixture.detectChanges(),
@@ -94,6 +101,8 @@ describe('SubmissionSectionCoarNotifyComponent', () => {
         }),
       ),
     );
+    ldnServicesService.findByInboundPattern.and.returnValue(createSuccessfulRemoteDataObject$(createPaginatedList([])));
+    sectionService.getShownSectionErrors.and.returnValue(of([]));
     fixture.detectChanges();
   });
 
@@ -263,9 +272,8 @@ describe('SubmissionSectionCoarNotifyComponent', () => {
 
       component.patterns = [pattern1, pattern2];
 
-      spyOn(component, 'filterServices').and.callFake((pattern) => {
-        return of(services);
-      });
+      ldnServicesService.findById.and.callFake(id =>
+        createSuccessfulRemoteDataObject$(services.find(service => service.id === Number(id))));
     });
 
     it('should initialize the selected services by pattern', () => {
@@ -288,6 +296,75 @@ describe('SubmissionSectionCoarNotifyComponent', () => {
         service2,
         service3,
       ]);
+    });
+  });
+
+  describe('saved selections', () => {
+    const pattern = 'request-endorsement';
+    const service = Deserialize({
+      id: 7, name: 'Test endorsement service', enabled: true,
+      notifyServiceInboundPatterns: [{ pattern, automatic: true }],
+    }, LdnService) as LdnService;
+
+    function reopen(ids: (number | string)[]) {
+      component.sectionData.data[pattern] = ids;
+      coarNotifyConfigDataService.findAll.and.returnValue(createSuccessfulRemoteDataObject$(createPaginatedList([
+        Object.assign(new SubmissionCoarNotifyModel(), { patterns: [{ pattern, multipleRequest: true }] }),
+      ])));
+      component.setCoarNotifyConfig();
+      fixture.detectChanges();
+    }
+
+    it('should display a task-created selection even when no manual options are returned', () => {
+      ldnServicesService.findById.and.returnValue(createSuccessfulRemoteDataObject$(service));
+      reopen([7]);
+
+      expect(ldnServicesService.findById).toHaveBeenCalledWith('7');
+      expect(fixture.nativeElement.querySelector('input').value).toBe('Test endorsement service');
+      expect(operationsBuilder.add).not.toHaveBeenCalled();
+      expect(operationsBuilder.remove).not.toHaveBeenCalled();
+    });
+
+    it('should display a saved service after an asynchronous lookup', fakeAsync(() => {
+      ldnServicesService.findById.and.returnValue(createSuccessfulRemoteDataObject$(service).pipe(delay(1)));
+      reopen([7]);
+      tick(1);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('input').value).toBe('Test endorsement service');
+      expect(operationsBuilder.add).not.toHaveBeenCalled();
+    }));
+
+    it('should retain a disabled service and normalize string IDs', () => {
+      ldnServicesService.findById.and.returnValue(createSuccessfulRemoteDataObject$(Object.assign(new LdnService(), service, { enabled: false })));
+      reopen(['7']);
+
+      expect(component.ldnServiceByPattern[pattern].services[0].id).toBe(7);
+      expect(fixture.nativeElement.querySelector('input').value).toBe('Test endorsement service');
+    });
+
+    it('should retain the identity of a service that cannot be loaded', () => {
+      ldnServicesService.findById.and.returnValue(createFailedRemoteDataObject$('Not found', 404));
+      reopen([7]);
+
+      expect(component.ldnServiceByPattern[pattern].services[0].id).toBe(7);
+      expect(fixture.nativeElement.querySelector('input')).not.toBeNull();
+      expect(operationsBuilder.remove).not.toHaveBeenCalled();
+    });
+
+    it('should remove a saved selection even when it is absent from the dropdown', () => {
+      ldnServicesService.findById.and.returnValue(createSuccessfulRemoteDataObject$(service));
+      reopen([7]);
+      component.onChange(pattern, 0, null);
+
+      expect(operationsBuilder.remove).toHaveBeenCalledWith(componentAsAny.pathCombiner.getPath([pattern, '0']));
+      expect(operationsBuilder.add).not.toHaveBeenCalled();
+    });
+
+    it('should cache available options across repeated template evaluations', () => {
+      component.filterServices(pattern).subscribe();
+      component.filterServices(pattern).subscribe();
+      expect(ldnServicesService.findByInboundPattern.calls.allArgs().filter(args => args[0] === pattern).length).toBe(1);
     });
   });
 
@@ -382,6 +459,7 @@ describe('SubmissionSectionCoarNotifyComponent', () => {
     const services = [service1, service2, service3];
 
     beforeEach(() => {
+      componentAsAny.filteredServicesByPattern = {};
       ldnServicesService.findByInboundPattern.and.returnValue(
         createSuccessfulRemoteDataObject$(createPaginatedList(services)),
       );

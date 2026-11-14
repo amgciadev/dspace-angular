@@ -13,6 +13,8 @@ import { By } from '@angular/platform-browser';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute } from '@angular/router';
 import { RouterTestingModule } from '@angular/router/testing';
+import { LdnServicesService } from '@dspace/core/coar-notify/ldn-services/ldn-services-data.service';
+import { LdnService } from '@dspace/core/coar-notify/ldn-services/models/ldn-services.model';
 import { NotifyInfoService } from '@dspace/core/coar-notify/notify-info/notify-info.service';
 import { AuthorizationDataService } from '@dspace/core/data/feature-authorization/authorization-data.service';
 import { ItemDataService } from '@dspace/core/data/item-data.service';
@@ -142,6 +144,8 @@ describe('FullItemPageComponent', () => {
         },
       }), RouterTestingModule.withRoutes([]), BrowserAnimationsModule, FullItemPageComponent, TruncatePipe, VarDirective],
       providers: [
+        { provide: LdnServicesService, useValue: { findById: () => createSuccessfulRemoteDataObject$(
+          Object.assign(new LdnService(), { id: 7, name: 'Test endorsement service', enabled: true })) } },
         { provide: ActivatedRoute, useValue: routeStub },
         { provide: ItemDataService, useValue: {} },
         { provide: HeadTagService, useValue: headTagService },
@@ -206,6 +210,16 @@ describe('FullItemPageComponent', () => {
       expect(simpleViewBtn).toBeFalsy();
     });
   }));
+
+  ['wfi', 'wsi'].forEach(source => {
+    it(`should show saved COAR Notify requests when viewing a ${source}`, () => {
+      routeData[source] = createSuccessfulRemoteDataObject({ sections: { coarnotify: { 'request-endorsement': [7] } } });
+      comp.ngOnInit();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('ds-coar-notify-requests').textContent).toContain('Test endorsement service');
+    });
+  });
 
   describe('when the item is withdrawn and the user is an admin', () => {
     beforeEach(() => {

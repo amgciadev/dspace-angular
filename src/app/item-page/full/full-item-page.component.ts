@@ -38,6 +38,7 @@ import {
 } from 'rxjs/operators';
 
 import { fadeInOut } from '../../shared/animations/fade';
+import { CoarNotifyRequestsComponent } from '../../shared/coar-notify-requests/coar-notify-requests.component';
 import { DsoEditMenuComponent } from '../../shared/dso-page/dso-edit-menu/dso-edit-menu.component';
 import { ErrorComponent } from '../../shared/error/error.component';
 import { ThemedLoadingComponent } from '../../shared/loading/themed-loading.component';
@@ -63,6 +64,7 @@ import { ThemedFullFileSectionComponent } from './field-components/file-section/
   animations: [fadeInOut],
   imports: [
     AsyncPipe,
+    CoarNotifyRequestsComponent,
     CollectionsComponent,
     DsoEditMenuComponent,
     ErrorComponent,
@@ -88,6 +90,9 @@ export class FullItemPageComponent extends ItemPageComponent implements OnInit, 
    * True when the itemRD has been originated from its workspaceite/workflowitem, false otherwise.
    */
   fromSubmissionObject = false;
+
+  /** Saved requests exposed by the authorized workspace/workflow response. */
+  coarNotifySelections: { [pattern: string]: (number | string)[] };
 
   subs = [];
 
@@ -116,6 +121,7 @@ export class FullItemPageComponent extends ItemPageComponent implements OnInit, 
 
     this.subs.push(this.route.data.subscribe((data: Data) => {
       this.fromSubmissionObject = hasValue(data.wfi) || hasValue(data.wsi);
+      this.coarNotifySelections = (data.wfi || data.wsi)?.payload?.sections?.coarnotify;
     }),
     );
   }
