@@ -470,6 +470,21 @@ describe('SubmissionSectionCoarNotifyComponent', () => {
         expect(result).toEqual(services);
       });
     });
+    it('should include eligible services beyond the first API page', (done) => {
+      const firstPage = createPaginatedList([service1]);
+      Object.assign(firstPage.pageInfo, { currentPage: 1, totalPages: 2, totalElements: 2, elementsPerPage: 1 });
+      const secondPage = createPaginatedList([service2]);
+      Object.assign(secondPage.pageInfo, { currentPage: 2, totalPages: 2, totalElements: 2, elementsPerPage: 1 });
+      ldnServicesService.findByInboundPattern.and.callFake((requestedPattern, options) =>
+        createSuccessfulRemoteDataObject$(options?.currentPage === 2 ? secondPage : firstPage));
+
+      component.filterServices(pattern).subscribe(result => {
+        expect(result).toEqual([service1, service2]);
+        expect(ldnServicesService.findByInboundPattern).toHaveBeenCalledWith(pattern, { currentPage: 2, elementsPerPage: 1 });
+        done();
+      });
+    });
+
   });
 
   describe('hasInboundPattern', () => {

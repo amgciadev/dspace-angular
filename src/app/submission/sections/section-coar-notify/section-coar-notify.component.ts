@@ -35,12 +35,15 @@ import {
 import { TranslateModule } from '@ngx-translate/core';
 import { InfiniteScrollModule } from 'ngx-infinite-scroll';
 import {
+  EMPTY,
   Observable,
   Subscription,
 } from 'rxjs';
 import {
+  expand,
   filter,
   map,
+  reduce,
   shareReplay,
   take,
   tap,
@@ -252,14 +255,18 @@ export class SubmissionSectionCoarNotifyComponent extends SectionModelComponent 
 
   /**
    * Method called when dropdowns for the section are initialized
-   * Retrieve services with corresponding patterns to the dropdowns.
+   * Retrieve every page of services with corresponding patterns to the dropdowns.
    */
   filterServices(pattern: string): Observable<LdnService[]> {
     if (!this.filteredServicesByPattern[pattern]) {
-      this.filteredServicesByPattern[pattern] = this.ldnServicesService.findByInboundPattern(pattern).pipe(
-        getFirstCompletedRemoteData(),
-        getRemoteDataPayload(),
-        map(payload => payload?.page || []),
+      const loadPage = (currentPage: number, elementsPerPage?: number) =>
+        this.ldnServicesService.findByInboundPattern(pattern, { currentPage, elementsPerPage }).pipe(
+          getFirstCompletedRemoteData(),
+          getRemoteDataPayload(),
+        );
+      this.filteredServicesByPattern[pattern] = loadPage(1).pipe(
+        expand((page, index) => index + 1 < page?.totalPages ? loadPage(index + 2, page.elementsPerPage) : EMPTY),
+        reduce((services, page) => [...services, ...(page?.page || [])], [] as LdnService[]),
         map(services => services.filter(service => this.hasInboundPattern(service, pattern))),
         tap(services => {
           this.hasSectionData = this.hasSectionData || services.length > 0;
